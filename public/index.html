@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPChat // HACKER EDITION</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --hacker-green: #0f0;
+            --hacker-dark: #000;
+            --hacker-dim: #003300;
+            --alert-red: #ff3333;
+            --font-main: 'Courier New', Courier, monospace;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            background-color: var(--hacker-dark);
+            color: var(--hacker-green);
+            font-family: var(--font-main);
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Matrix Background Canvas */
+        #matrix-canvas {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 0;
+            opacity: 0.3;
+        }
+
+        /* Scanline Effect */
+        .scanlines {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.2));
+            background-size: 100% 4px;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .container {
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            max-width: 600px;
+            height: 90vh;
+            margin: 5vh auto;
+            background: rgba(0, 10, 0, 0.85);
+            border: 1px solid var(--hacker-green);
+            box-shadow: 0 0 20px var(--hacker-dim);
+            display: flex;
+            flex-direction: column;
+            backdrop-filter: blur(5px);
+        }
+
+        /* Screens */
+        .screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            opacity: 0;
+            visibility: hidden;
+            transition: 0.3s;
+        }
+        .screen.active { opacity: 1; visibility: visible; }
+
+        h1 { 
+            font-size: 2.5rem; 
+            text-align: center; 
+            text-transform: uppercase; 
+            letter-spacing: 5px;
+            text-shadow: 0 0 10px var(--hacker-green);
+            margin-bottom: 10px;
+        }
+        h2 { text-align: center; font-size: 0.9rem; opacity: 0.7; margin-bottom: 30px; }
+
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input {
+            width: 100%;
+            padding: 12px;
+            background: black;
+            border: 1px solid var(--hacker-green);
+            color: var(--hacker-green);
+            font-family: var(--font-main);
+            font-size: 1rem;
+            outline: none;
+        }
+        input:focus { box-shadow: 0 0 10px var(--hacker-dim); }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            background: transparent;
+            border: 1px solid var(--hacker-green);
+            color: var(--hacker-green);
+            font-family: var(--font-main);
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: 0.2s;
+            margin-top: 10px;
+        }
+        .btn:hover { background: var(--hacker-green); color: black; box-shadow: 0 0 15px var(--hacker-green); }
+        .btn-danger { border-color: var(--alert-red); color: var(--alert-red); }
+        .btn-danger:hover { background: var(--alert-red); color: black; box-shadow: 0 0 15px var(--alert-red); }
+        .btn-secondary { border-color: #555; color: #888; }
+        .btn-secondary:hover { background: #333; color: white; box-shadow: none; }
+
+        /* Chat Header */
+        .chat-header {
+            padding: 15px;
+            border-bottom: 1px solid var(--hacker-green);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0, 20, 0, 0.9);
+        }
+        .room-info { font-weight: bold; }
+        
+        /* Terminate Button */
+        .leave-btn {
+            background: transparent;
+            border: 1px solid var(--alert-red);
+            color: var(--alert-red);
+            padding: 5px 10px;
+            cursor: pointer;
+            font-family: var(--font-main);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            transition: 0.2s;
+        }
+        .leave-btn:hover { 
+            background: var(--alert-red); 
+            color: black; 
+            box-shadow: 0 0 10px var(--alert-red);
+        }
+
+        /* Messages */
+        .messages-area {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .message {
+            max-width: 80%;
+            padding: 10px;
+            border: 1px solid var(--hacker-dim);
+            background: rgba(0, 0, 0, 0.5);
+            animation: fadeIn 0.3s;
+        }
+        .message.sent { align-self: flex-end; border-color: var(--hacker-green); color: var(--hacker-green); }
+        .message.received { align-self: flex-start; border-color: #555; color: #ccc; }
+        .msg-time { font-size: 0.7rem; opacity: 0.5; display: block; margin-top: 5px; text-align: right; }
+        
+        .system-msg {
+            align-self: center;
+            color: var(--alert-red);
+            border: 1px dashed var(--alert-red);
+            padding: 5px 10px;
+            font-size: 0.8rem;
+            text-align: center;
+        }
+
+        .typing-indicator { height: 20px; padding: 0 20px; font-size: 0.8rem; color: #555; font-style: italic; }
+
+        .input-area {
+            padding: 15px;
+            border-top: 1px solid var(--hacker-green);
+            display: flex;
+            gap: 10px;
+        }
+
+        /* Custom Modal for Termination */
+        .modal-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            opacity: 0;
+            visibility: hidden;
+            transition: 0.3s;
+        }
+        .modal-overlay.active { opacity: 1; visibility: visible; }
+        
+        .modal-box {
+            background: #000;
+            border: 2px solid var(--alert-red);
+            padding: 30px;
+            text-align: center;
+            width: 80%;
+            box-shadow: 0 0 30px var(--alert-red);
+        }
+        .modal-title { color: var(--alert-red); font-size: 1.5rem; margin-bottom: 15px; text-transform: uppercase; }
+        .modal-text { color: #fff; margin-bottom: 20px; }
+        .modal-actions { display: flex; gap: 10px; justify-content: center; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #000; }
+        ::-webkit-scrollbar-thumb { background: var(--hacker-dim); border: 1px solid var(--hacker-green); }
+    </style>
+</head>
+<body>
+
+    <!-- Matrix Background -->
+    <canvas id="matrix-canvas"></canvas>
+    <div class="scanlines"></div>
+
+    <div class="container">
+        <!-- Screen 1: Create -->
+        <div id="screen-home" class="screen active">
+            <h1>IPChat</h1>
+            <h2>// SECURE TERMINAL LINK //</h2>
+            
+            <div class="form-group">
+                <label>> ROOM_NAME</label>
+                <input type="text" id="create-room-name" placeholder="ENTER_ID">
+            </div>
+            <div class="form-group">
+                <label>> ACCESS_KEY</label>
+                <input type="password" id="create-password" placeholder="******">
+            </div>
+            <button onclick="createRoom()" class="btn">INITIALIZE_ROOM</button>
+            <button onclick="showJoinScreen()" class="btn btn-secondary">JOIN_LINK</button>
+        </div>
+
+        <!-- Screen 2: Join -->
+        <div id="screen-join" class="screen">
+            <h1>ACCESS</h1>
+            <h2>// ENTER CREDENTIALS //</h2>
+            
+            <div class="form-group">
+                <label>> TARGET_ID</label>
+                <input type="text" id="join-room-id" placeholder="ROOM_CODE">
+            </div>
+            <div class="form-group">
+                <label>> DECRYPTION_KEY</label>
+                <input type="password" id="join-password" placeholder="PASSWORD">
+            </div>
+            <div id="join-error" style="color: var(--alert-red); text-align: center; margin-bottom: 10px;"></div>
+            <button onclick="joinRoom()" class="btn">ESTABLISH_LINK</button>
+            <button onclick="showHomeScreen()" class="btn btn-secondary">ABORT</button>
+        </div>
+
+        <!-- Screen 3: Chat -->
+        <div id="screen-chat" class="screen" style="padding: 0;">
+            <div class="chat-header">
+                <div class="room-info">
+                    <span id="chat-room-name">UNKNOWN</span>
+                    <span style="font-size: 0.7rem; color: #555;"> [ID: <span id="chat-room-id">---</span>] </span>
+                </div>
+                <!-- TERMINATE BUTTON -->
+                <button class="leave-btn" onclick="openTerminateModal()">
+                    <i class="fa-solid fa-power-off"></i> TERMINATE
+                </button>
+            </div>
+
+            <div class="messages-area" id="messages-area">
+                <div class="system-msg">SYSTEM READY. ENCRYPTION ACTIVE.</div>
+            </div>
+
+            <div class="typing-indicator" id="typing-indicator"></div>
+
+            <div class="input-area">
+                <input type="text" id="message-input" placeholder="TRANSMIT_DATA..." autocomplete="off">
+                <button onclick="sendMessage()" class="btn" style="width: auto; margin: 0;">SEND</button>
+            </div>
+        </div>
+
+        <!-- Termination Confirmation Modal -->
+        <div id="terminate-modal" class="modal-overlay">
+            <div class="modal-box">
+                <div class="modal-title"><i class="fa-solid fa-triangle-exclamation"></i> WARNING</div>
+                <div class="modal-text">Terminating session will disconnect ALL users and destroy the room. This action cannot be undone.</div>
+                <div class="modal-actions">
+                    <button onclick="closeTerminateModal()" class="btn btn-secondary" style="width: auto;">CANCEL</button>
+                    <button onclick="confirmTerminate()" class="btn btn-danger" style="width: auto;">TERMINATE</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // --- Matrix Rain Animation ---
+    const canvas = document.getElementById('matrix-canvas');
+    const ctx = canvas.getContext('2d');
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const katakana = 'アァカサタナハマヤャラワガザダバパイィキシチニヒミリヂビピウゥクスツヌフムユュルグズブヅプエェケセテネヘメレゲゼデベペオォコソトノホモヨョロヲゴゾドボポヴッン';
+    const latin = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const nums = '0123456789';
+    const alphabet = katakana + latin + nums;
+
+    const fontSize = 16;
+    const columns = canvas.width/fontSize;
+    const rainDrops = [];
+
+    for( let x = 0; x < columns; x++ ) {
+        rainDrops[x] = 1;
+    }
+
+    const draw = () => {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.fillStyle = '#0F0';
+        ctx.font = fontSize + 'px monospace';
+
+        for(let i = 0; i < rainDrops.length; i++) {
+            const text = alphabet.charAt(Math.floor(Math.random() * alphabet.length));
+            ctx.fillText(text, i*fontSize, rainDrops[i]*fontSize);
+            
+            if(rainDrops[i]*fontSize > canvas.height && Math.random() > 0.975){
+                rainDrops[i] = 0;
+            }
+            rainDrops[i]++;
+        }
+    };
+    setInterval(draw, 30);
+
+    window.addEventListener('resize', () => {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    });
+
+    // --- Chat Logic ---
+    const socket = io();
+    let currentRoomId = null;
+    let typingTimeout;
+
+    function showScreen(id) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+    }
+    function showHomeScreen() { showScreen('screen-home'); }
+    function showJoinScreen() { showScreen('screen-join'); }
+    function showChatScreen() { showScreen('screen-chat'); }
+
+    function createRoom() {
+        const name = document.getElementById('create-room-name').value.trim();
+        const pass = document.getElementById('create-password').value.trim();
+        if(!name || !pass) return alert('INPUT REQUIRED');
+        socket.emit('createRoom', { roomName: name, password: pass });
+    }
+
+    function joinRoom() {
+        const id = document.getElementById('join-room-id').value.trim().toUpperCase();
+        const pass = document.getElementById('join-password').value.trim();
+        if(!id || !pass) return document.getElementById('join-error').innerText = 'MISSING_DATA';
+        document.getElementById('join-error').innerText = '';
+        socket.emit('joinRoom', { roomId: id, password: pass });
+    }
+
+    function sendMessage() {
+        const input = document.getElementById('message-input');
+        const msg = input.value.trim();
+        if (!msg || !currentRoomId) return;
+        
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        appendMessage(msg, time, 'sent');
+        
+        socket.emit('sendMessage', { roomId: currentRoomId, message: msg });
+        input.value = '';
+        socket.emit('typing', { roomId: currentRoomId, isTyping: false });
+    }
+
+    // --- Termination Modal Logic ---
+    function openTerminateModal() {
+        document.getElementById('terminate-modal').classList.add('active');
+    }
+
+    function closeTerminateModal() {
+        document.getElementById('terminate-modal').classList.remove('active');
+    }
+
+    function confirmTerminate() {
+        if (currentRoomId) {
+            socket.emit('leaveChat', { roomId: currentRoomId });
+            closeTerminateModal();
+        }
+    }
+
+    document.getElementById('message-input').addEventListener('input', () => {
+        if(!currentRoomId) return;
+        socket.emit('typing', { roomId: currentRoomId, isTyping: true });
+        clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(() => {
+            socket.emit('typing', { roomId: currentRoomId, isTyping: false });
+        }, 1000);
+    });
+
+    socket.on('roomCreated', ({ roomId, roomName }) => {
+        currentRoomId = roomId;
+        setupChatUI(roomName, roomId);
+    });
+
+    socket.on('joinSuccess', ({ roomId, roomName }) => {
+        currentRoomId = roomId;
+        setupChatUI(roomName, roomId);
+    });
+
+    function setupChatUI(name, id) {
+        document.getElementById('chat-room-name').innerText = name;
+        document.getElementById('chat-room-id').innerText = id;
+        showChatScreen();
+    }
+
+    socket.on('error', (msg) => {
+        alert(msg);
+        document.getElementById('join-error').innerText = msg;
+    });
+
+    socket.on('receiveMessage', ({ senderId, message, timestamp }) => {
+        appendMessage(message, timestamp, 'received');
+    });
+
+    socket.on('systemMessage', (msg) => {
+        appendSystem(msg);
+    });
+
+    socket.on('userTyping', ({ userId, isTyping }) => {
+        const indicator = document.getElementById('typing-indicator');
+        if (userId !== socket.id) { 
+            indicator.innerText = isTyping ? 'REMOTE_USER_TYPING...' : '';
+        }
+    });
+
+    socket.on('userJoined', () => {
+        appendSystem('SECURE_LINK_ESTABLISHED.');
+    });
+    
+    // Handle Termination from Server
+    socket.on('sessionTerminated', (msg) => {
+        alert(msg);
+        location.reload(); // Reloads page to kick user out
+    });
+
+    function appendMessage(text, time, type) {
+        const area = document.getElementById('messages-area');
+        const div = document.createElement('div');
+        div.className = `message ${type}`;
+        div.innerHTML = `${text}<span class="msg-time">${time}</span>`;
+        area.appendChild(div);
+        area.scrollTop = area.scrollHeight;
+    }
+
+    function appendSystem(text) {
+        const area = document.getElementById('messages-area');
+        const div = document.createElement('div');
+        div.className = 'system-msg';
+        div.innerText = text;
+        area.appendChild(div);
+        area.scrollTop = area.scrollHeight;
+    }
+
+    document.getElementById('message-input').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
+    });
+</script>
+</body>
+</html>
